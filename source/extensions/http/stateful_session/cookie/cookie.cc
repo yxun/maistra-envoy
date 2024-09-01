@@ -12,9 +12,10 @@ namespace Cookie {
 void CookieBasedSessionStateFactory::SessionStateImpl::onUpdate(
     const Upstream::HostDescription& host, Envoy::Http::ResponseHeaderMap& headers) {
   absl::string_view host_address = host.address()->asStringView();
+  std::string encoded_address;
   if (!upstream_address_.has_value() || host_address != upstream_address_.value()) {
     if (Runtime::runtimeFeatureEnabled(
-          "envoy.reloadable_features.stateful_session_encode_ttl_in_cookie")) {
+            "envoy.reloadable_features.stateful_session_encode_ttl_in_cookie")) {
       // Build proto message
       envoy::Cookie cookie;
       cookie.set_address(std::string(host_address));
@@ -37,9 +38,9 @@ void CookieBasedSessionStateFactory::SessionStateImpl::onUpdate(
 }
 
 CookieBasedSessionStateFactory::CookieBasedSessionStateFactory(
-    const CookieBasedSessionStateProto& config)
+    const CookieBasedSessionStateProto& config, TimeSource& time_source)
     : name_(config.cookie().name()), ttl_(config.cookie().ttl().seconds()),
-      path_(config.cookie().path()) {
+      path_(config.cookie().path()), time_source_(time_source) {
   if (name_.empty()) {
     throw EnvoyException("Cookie key cannot be empty for cookie based stateful sessions");
   }

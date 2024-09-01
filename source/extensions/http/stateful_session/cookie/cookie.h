@@ -5,6 +5,7 @@
 #include <memory>
 
 #include "envoy/extensions/http/stateful_session/cookie/v3/cookie.pb.h"
+#include "envoy/http/hash_policy.h"
 #include "envoy/http/stateful_session.h"
 
 #include "source/common/common/base64.h"
@@ -25,8 +26,8 @@ public:
   class SessionStateImpl : public Envoy::Http::SessionState {
   public:
     SessionStateImpl(absl::optional<std::string> address,
-                     const CookieBasedSessionStateFactory& factory)
-        : upstream_address_(std::move(address)), factory_(factory) {}
+                     const CookieBasedSessionStateFactory& factory, TimeSource& time_source)
+        : upstream_address_(std::move(address)), factory_(factory), time_source_(time_source) {}
 
     absl::optional<absl::string_view> upstreamAddress() const override { return upstream_address_; }
     void onUpdate(const Upstream::HostDescription& host,
@@ -35,16 +36,18 @@ public:
   private:
     absl::optional<std::string> upstream_address_;
     const CookieBasedSessionStateFactory& factory_;
+    TimeSource& time_source_;
   };
 
-  CookieBasedSessionStateFactory(const CookieBasedSessionStateProto& config);
+  CookieBasedSessionStateFactory(const CookieBasedSessionStateProto& config,
+                                 TimeSource& time_source);
 
   Envoy::Http::SessionStatePtr create(const Envoy::Http::RequestHeaderMap& headers) const override {
     if (!requestPathMatch(headers.getPathValue())) {
       return nullptr;
     }
 
-    return std::make_unique<SessionStateImpl>(parseAddress(headers), *this);
+    return std::make_unique<SessionStateImpl>(parseAddress(headers), *this, time_source_);
   }
 
   bool requestPathMatch(absl::string_view request_path) const {
@@ -90,12 +93,14 @@ private:
   }
 
   std::string makeSetCookie(const std::string& address) const {
-    return Envoy::Http::Utility::makeSetCookieValue(name_, address, path_, ttl_, true);
+    return Envoy::Http::Utility::makeSetCookieValue(name_, address, path_, ttl_, true, attributes_);
   }
 
   const std::string name_;
   const std::chrono::seconds ttl_;
   const std::string path_;
+  const Envoy::Http::CookieAttributeRefVector attributes_;
+  TimeSource& time_source_;
 
   std::function<bool(absl::string_view)> path_matcher_;
 };
